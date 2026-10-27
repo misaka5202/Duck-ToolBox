@@ -25,6 +25,7 @@ public:
         if(!path) {env->ExceptionClear();unload();return;}
         std::string_view directory(path);
         const bool google=directory.ends_with("/com.google.android.gms")||directory.ends_with("/com.android.vending");
+        const bool vending=directory.ends_with("/com.android.vending");
         env->ReleaseStringUTFChars(args->app_data_dir,path);
         if(!google) {unload();return;}
         int fd=api->connectCompanion();std::string content;
@@ -33,7 +34,8 @@ public:
         if(!received) {LOGD("Engine inactive or companion unavailable");unload();return;}
         auto config=pif::parse(content);
         if(!config.is_object()||config.empty()) {unload();return;}
-        api->setOption(zygisk::FORCE_DENYLIST_UNMOUNT);
+        // Play Store keeps module mounts (e.g. /system/fonts); only GMS processes are unmounted.
+        if(!vending) api->setOption(zygisk::FORCE_DENYLIST_UNMOUNT);
         if(process!="com.google.android.gms.unstable" && process!="com.android.vending") {unload();return;}
         raw=std::move(content);boot=pif::bootIdentity();start=pif::processStart();
         settings=pif::settings(std::move(config),process=="com.android.vending");ready=true;
