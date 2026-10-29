@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Linux environments
+
+- Reject ARM64 core dumps, malformed load segments and unavailable ELF interpreters
+  during import; resolve interpreter paths within the guest filesystem.
+- Distinguish zombie processes from live guests and reject symbolic links used as
+  private state directories.
+- Preserve edited drafts across external configuration changes, identify invalid fields
+  and distinguish empty logs from missing environments across all 16 locales.
+
+- Preserve cancellation codes during decompression, handle concurrent cgroup removal,
+  and verify the final init identity and supervisor lease before confirming stop.
+- Drain final log output, refresh active runtime state without filling operation history,
+  and make inspection feedback, cancelled imports and disabled settings explicit.
+
+- Import trusted ARM64 rootfs archives with inspected SHA-256 verification, bounded
+  extraction, asynchronous progress, cancellation and private staging.
+- Manage private mounts, terminal entry, foreground services, DNS, bounded logs and
+  optional startup after boot. Use PID namespaces or cgroup v2 to track guest processes.
+- Confirm changes against the current configuration revision and preserve data when
+  termination cannot be verified. Keep all 16 locales and RTL layouts aligned with
+  existing interface components.
+
 ### Kernel modules
 
 - Reject duplicate or unreadable ELF metadata sections, and mark inferred or repeated
