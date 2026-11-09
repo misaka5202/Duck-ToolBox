@@ -9,7 +9,8 @@
     "generate": "Impressões",
     "compatibility": "Compatibilidade",
     "diagnostics": "Diagnóstico",
-    "license": "Licenças"
+    "license": "Licenças",
+    "archive": "Biblioteca de propriedades Pixel"
   },
   "enabled": "Ativar mecanismo",
   "preview": "Prévia das alterações",
@@ -80,6 +81,7 @@
   "denylistHelp": "Gestão automática da Magisk DenyList: o modo completo remove GMS e Play Store; somente scripts os adiciona. A lista do gerenciador root é alterada.",
   "selinuxHelp": "No modo permissivo, o comportamento original restringe a leitura de SELinux enforce/policy. Isso não muda o kernel para enforcing.",
   "flagHelp": {
+    "fullInjection": "Usa a injeção nativa de Build e propriedades privadas do processo no ARM64. Desative para usar os métodos anteriores.",
     "spoofBuild": "Substitui campos Build no processo de destino.",
     "spoofProps": "Substitui leituras de propriedades no processo de destino.",
     "spoofProvider": "Compatibilidade antiga: bloqueia solicitações de cadeias de certificados do DroidGuard. Pode interferir na atestação por hardware.",
@@ -96,6 +98,7 @@
     "wildcard": "Padrão não suportado: apenas * inicial para sufixo está implementado.",
     "canary": "Canary mantém heurísticas originais: Pixel 10a usa API 35 (nota: real 36), aparelhos desconhecidos 37, board API 32. As seis semanas e o patch alternativo são estimativas, não aceitação do Google nem validade dos certificados.",
     "vending_priority": "A compatibilidade SDK da Play Store tem prioridade sobre a impressão.",
+    "vending_build_priority": "A injeção Build da Play Store tem prioridade sobre os modos SDK e impressão digital.",
     "pixel_patch_unknown": "Os metadados Google não indicam a data exata do patch; o candidato a deixa em branco."
   },
   "strongHelp": "Define spoofProvider=0 para o candidato. Mantém valores de patch Build e propriedade coerentes; nenhum resultado é garantido.",
@@ -122,6 +125,7 @@
     "SECURITY_PATCH": "Data do patch de segurança",
     "DEVICE_INITIAL_SDK_INT": "API de lançamento do dispositivo",
     "advanced": "Opções avançadas",
+    "fullInjection": "Injeção completa",
     "spoofBuild": "Substituir campos Build",
     "spoofProps": "Substituir leituras de propriedades",
     "spoofProvider": "Compatibilidade Provider antiga",
@@ -145,6 +149,7 @@
     "invalid": "Não foi possível ler este instantâneo. Os outros continuam disponíveis."
   },
   "inspection": {
+    "private": "Propriedades privadas correspondentes · {matched}/{total}",
     "title": "Comparação de informações",
     "help": "Compara propriedades atuais do sistema com os valores Build e propriedades salvos. Outros módulos podem já afetar as leituras do sistema.",
     "refresh": "Atualizar leituras",
@@ -199,9 +204,14 @@
     "fetch": "Buscar compilações Pixel",
     "loading": "Buscando…",
     "patchUnknown": "A data exata do patch é desconhecida; não será estimada nem sincronizada.",
-    "preview": "Visualizar impressão selecionada"
+    "preview": "Visualizar impressão selecionada",
+    "search": "Buscar modelo ou codinome",
+    "noDevices": "Nenhum dispositivo encontrado. Limpe a busca para ver todos os modelos.",
+    "availability": "As compilações disponíveis dependem do serviço de metadados do Google. Um modelo listado não garante compilações disponíveis nem aprovação na verificação de integridade.",
+    "legacySource": "Este registro de origem antigo identifica apenas o dispositivo e a compilação. Ele não vincula a impressão digital completa, o modelo ou a API de lançamento."
   },
   "quick": {
+    "build": "Usar os campos Build configurados",
     "title": "Controles da impressão",
     "vending": "Modo de substituição da Play Store",
     "vendingHelp": "O modo de impressão altera apenas FINGERPRINT. A compatibilidade SDK tem prioridade.",
@@ -222,6 +232,26 @@
     "vendor": "Patch Vendor",
     "boot": "Patch Boot",
     "preview": "Atualizar prévia dos patches",
-    "draft": "Revise as alterações das partições antes de selecionar a sincronização."
+    "draft": "Revise as alterações das partições antes de selecionar a sincronização.",
+    "multipleTargets": "Só é possível sincronizar um backend de keystore por vez.",
+    "targetUnavailable": "O backend de keystore não está mais ativo. Atualize a prévia."
+  },
+  "archive": {
+    "title": "Biblioteca de propriedades Pixel",
+    "help": "Selecione dispositivo e canal do arquivo da comunidade para visualizar a configuração PI. As datas de patch vêm da compilação escolhida. O hash de inicialização é apenas uma referência; a aceitação exige testes no dispositivo.",
+    "source": "Fonte da comunidade",
+    "fetch": "Buscar biblioteca de propriedades",
+    "channel": "Canal de lançamento",
+    "release": "Estável",
+    "beta": "Beta",
+    "canary": "Canary",
+    "build": "Compilação",
+    "patch": "Patch de segurança",
+    "digest": "Hash de inicialização (referência)",
+    "updated": "Arquivo atualizado",
+    "preview": "Visualizar configuração do arquivo",
+    "details": "Detalhes da fonte",
+    "revision": "Commit de origem",
+    "preparing": "Preparando configuração…"
   }
 }

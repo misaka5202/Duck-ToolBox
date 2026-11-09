@@ -9,13 +9,23 @@ use std::collections::BTreeMap;
 
 pub type Entries = BTreeMap<String, String>;
 pub const ADVANCED: &[(&str, &str)] = &[
+    ("fullInjection", "1"),
     ("spoofBuild", "1"),
     ("spoofProps", "1"),
     ("spoofProvider", "0"),
     ("spoofSignature", "0"),
+    ("spoofVendingBuild", ""),
     ("spoofVendingFinger", "0"),
     ("spoofVendingSdk", "0"),
     ("verboseLogs", "0"),
+];
+const BOOLEAN_FLAGS: &[&str] = &[
+    "fullInjection",
+    "spoofBuild",
+    "spoofProps",
+    "spoofProvider",
+    "spoofSignature",
+    "spoofVendingBuild",
 ];
 
 pub fn parse(raw: &str, format: &str) -> Result<Entries> {
@@ -59,6 +69,17 @@ pub fn parse(raw: &str, format: &str) -> Result<Entries> {
         }
     } else {
         bail!("unsupported format: {format}");
+    }
+    for (key, value) in &mut entries {
+        if BOOLEAN_FLAGS.contains(&key.as_str())
+            || matches!(key.as_str(), "spoofVendingSdk" | "DEBUG")
+        {
+            match value.as_str() {
+                "true" => *value = "1".into(),
+                "false" => *value = "0".into(),
+                _ => {}
+            }
+        }
     }
     validate(&entries)?;
     Ok(entries)
@@ -144,11 +165,7 @@ pub fn validate(entries: &Entries) -> Result<()> {
         {
             bail!("{key}: expected a non-negative 32-bit integer or an empty value");
         }
-        if matches!(
-            key.as_str(),
-            "spoofBuild" | "spoofProps" | "spoofProvider" | "spoofSignature"
-        ) && !matches!(value.as_str(), "0" | "1" | "")
-        {
+        if BOOLEAN_FLAGS.contains(&key.as_str()) && !matches!(value.as_str(), "0" | "1" | "") {
             bail!("{key}: expected 0 or 1");
         }
         if matches!(key.as_str(), "verboseLogs" | "spoofVendingSdk")
@@ -190,6 +207,13 @@ pub fn migrate(entries: &mut Entries, advanced: bool, force: bool) {
     }
     if let Some(value) = entries.remove("VERBOSE_LOGS") {
         entries.entry("verboseLogs".into()).or_insert(value);
+    }
+    if entries.contains_key("spoofVendingBuild")
+        && let Some(value) = entries.remove("DEBUG")
+    {
+        entries
+            .entry("verboseLogs".into())
+            .or_insert(if value == "1" { "1" } else { "0" }.into());
     }
     for &(field, prop) in crate::rules::BUILD_PROPERTIES {
         if let Some(value) = entries.get(field).cloned() {
@@ -240,8 +264,8 @@ pub fn preview(engine: &Engine, input: &Value) -> Result<Value> {
     validate(&entries)?;
     let old = current(engine)?;
     let before: Entries = serde_json::from_value(old["entries"].clone())?;
-    // Defaults for a new configuration are visible in the preview. Existing
-    // configurations retain the legacy implicit defaults unless explicitly migrated.
+    // Preview materializes defaults for a new configuration. Existing files keep
+    // their explicit choices and resolve missing values at runtime.
     if before.is_empty() && !entries.is_empty() {
         for (key, value) in ADVANCED {
             entries.entry((*key).into()).or_insert((*value).into());
@@ -264,9 +288,55 @@ pub fn preview(engine: &Engine, input: &Value) -> Result<Value> {
     )
 }
 
+/// Preserve applied advanced options and the preview baseline in one write-lock scope.
+pub fn identity_preview(engine: &Engine, mut entries: Entries) -> Result<Value> {
+    let _lock = files::Lock::acquire(&engine.data)?;
+    let previous = current(engine)?;
+    for (key, _) in ADVANCED {
+        if let Some(value) = previous["entries"][*key].as_str() {
+            entries.insert((*key).into(), value.into());
+        }
+    }
+    let result = preview(
+        engine,
+        &json!({"content":serialize(&entries,"json")?,"format":"json"}),
+    )?;
+    if result["revision"] != previous["revision"] {
+        bail!("configuration changed while preparing the candidate; preview again");
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn identity_preview_preserves_advanced_options_and_uses_the_same_revision() {
+        let root = tempfile::tempdir().unwrap();
+        let engine = Engine {
+            data: root.path().join("data"),
+            module: root.path().join("module"),
+            sysroot: root.path().join("sys"),
+        };
+        files::atomic(
+            &engine.data.join("custom.pif.json"),
+            br#"{"MODEL":"Saved","fullInjection":"0","spoofVendingBuild":"0","spoofProps":"0","spoofProvider":"1"}"#,
+        )
+        .unwrap();
+        let before = current(&engine).unwrap();
+        let mut entries = parse("MODEL=Candidate", "prop").unwrap();
+        migrate(&mut entries, true, false);
+        let result = identity_preview(&engine, entries.clone()).unwrap();
+        assert_eq!(result["entries"]["MODEL"], "Candidate");
+        assert_eq!(result["entries"]["spoofProps"], "0");
+        assert_eq!(result["entries"]["spoofProvider"], "1");
+        assert_eq!(result["entries"]["fullInjection"], "0");
+        assert_eq!(result["entries"]["spoofVendingBuild"], "0");
+        assert_eq!(result["revision"], before["revision"]);
+        assert_eq!(current(&engine).unwrap(), before);
+        let _lock = files::Lock::acquire(&engine.data).unwrap();
+        assert!(identity_preview(&engine, entries).is_err());
+    }
     #[test]
     fn legacy_and_unknown_fields_survive_migration() {
         let mut e=parse("{\n// old\n\"FINGERPRINT\":\"google/p/d:16/ID/123:user/release-keys\",\"EXTRA\":\"https://a/b\",\"VERBOSE_LOGS\":\"2\"}","json").unwrap();
@@ -275,6 +345,26 @@ mod tests {
         assert_eq!(e["EXTRA"], "https://a/b");
         assert_eq!(e["verboseLogs"], "2");
         assert_eq!(e["ro.build.fingerprint"], e["FINGERPRINT"]);
+    }
+    #[test]
+    fn kow_prop_flags_are_normalized_without_overwriting_explicit_choices() {
+        let mut entries = parse(
+            "MODEL=Phone\nspoofBuild=true\nspoofProps=false\nspoofVendingBuild=true\nspoofVendingSdk=true\nDEBUG=false\nfullInjection=1\nEXTRA=true",
+            "prop",
+        )
+        .unwrap();
+        migrate(&mut entries, true, false);
+        assert_eq!(entries["spoofBuild"], "1");
+        assert_eq!(entries["spoofProps"], "0");
+        assert_eq!(entries["spoofVendingBuild"], "1");
+        assert_eq!(entries["spoofVendingSdk"], "1");
+        assert_eq!(entries["verboseLogs"], "0");
+        assert_eq!(entries["EXTRA"], "true");
+        assert!(
+            crate::rules::inspect(&entries)
+                .iter()
+                .any(|item| item["code"] == "vending_build_priority")
+        );
     }
     #[test]
     fn prop_last_line_wildcards_and_invalid_values() {

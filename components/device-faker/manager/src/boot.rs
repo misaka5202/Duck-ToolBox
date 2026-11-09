@@ -1,0 +1,41 @@
+//! Platform adapter for the toolbox's ordered global-property boot pass.
+use anyhow::{Context as _, Result};
+use std::{path::Path, process::Command, time::Duration};
+
+// PI owns a 30-second script deadline followed by bounded SELinux handling.
+// Its boot-completed caller must allow that cleanup before attempting fallback.
+const INTEGRITY_TIMEOUT: Duration = Duration::from_secs(35);
+fn legacy(module: &Path, fallback: bool) -> Result<()> {
+    let mut command = Command::new(if cfg!(target_os = "android") {
+        "/system/bin/sh"
+    } else {
+        "/bin/sh"
+    });
+    command.arg(module.join("prop.sh"));
+    if fallback {
+        command.arg("--fallback");
+    }
+    crate::bounded::output(command)
+        .map(|_| ())
+        .context(if fallback {
+            "legacy property fallback failed"
+        } else {
+            "legacy property pass failed"
+        })
+}
+pub fn stages(module: &Path) -> Result<()> {
+    let properties = legacy(module, false);
+    let engine = module.join("play-integrity/pif-engine");
+    let integrity = if engine.is_file() {
+        let mut command = Command::new(&engine);
+        command
+            .args(["stage", "late"])
+            .env("PIF_ENGINE_MODULE", module.join("play-integrity"));
+        crate::bounded::output_with_timeout(command, INTEGRITY_TIMEOUT)
+            .map(|_| ())
+            .or_else(|_| legacy(module, true))
+    } else {
+        Ok(())
+    };
+    properties.and(integrity)
+}

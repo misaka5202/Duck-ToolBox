@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Validate and package the module, including the separately licensed engine."""
 import argparse
+import os
+import tempfile
 import hashlib
 import json
 from pathlib import Path
@@ -9,6 +11,16 @@ import struct
 import subprocess
 import sys
 import zipfile
+import warnings
+
+from supply_chain.payload import (
+    ARTIFACT_PREFIX,
+    FULL_ID,
+    LITE_ID,
+    LITE_SOURCES,
+    module_properties,
+    validate_lite_payload,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE = ROOT / "module"
@@ -16,7 +28,8 @@ MODULE = ROOT / "module"
 
 def require(path):
     if not path.is_file() or not path.stat().st_size:
-        raise ValueError(f"Missing required payload: {path.relative_to(ROOT)}")
+        relative = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
+        raise ValueError(f"Missing required payload: {relative}")
 
 
 def elf(path, width, machine):
@@ -34,17 +47,121 @@ def check_source_checkout(commit, root=ROOT):
     if head != commit:
         raise ValueError("Engine source commit differs from the packaging checkout")
     dirty = subprocess.check_output(
-        ["git", "status", "--porcelain", "--untracked-files=all", "--",
-         "components/play-integrity", "scripts"],
+        ["git", "status", "--porcelain", "--untracked-files=all"],
         cwd=root, text=True,
     ).strip()
     if dirty:
         raise ValueError("Corresponding-source checkout contains unpublished changes: " + dirty)
+    components = subprocess.check_output(
+        ["git", "ls-tree", "-r", commit, "--", "components/play-integrity", "components/device-faker", "components/zygisk-runtime", "components/language-spoof"],
+        cwd=root, text=True,
+    )
+    if any(line.startswith("160000 ") for line in components.splitlines()):
+        raise ValueError("Embedded components must contain source files, not Git submodules")
+
+
+def remove_source_archives(module):
+    for relative in ["webroot/licenses/corresponding-source.tar.gz",
+                     "webroot/licenses/play-integrity-source.tar.gz",
+                     "licenses/play-integrity-source.tar.gz"]:
+        for suffix in ["", ".sha256"]:
+            (module / (relative + suffix)).unlink(missing_ok=True)
+
+
+def write_module_archive(module, archive, metadata=None):
+    archive = Path(archive)
+    if archive.resolve().is_relative_to(module.resolve()):
+        raise ValueError("Archive output must be outside the module source directory")
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=archive.parent, suffix=".zip", delete=False) as temporary:
+        candidate = Path(temporary.name)
+    try:
+        with zipfile.ZipFile(candidate, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6, strict_timestamps=False) as output:
+            for path in sorted(module.rglob("*")):
+                if path.is_file():
+                    if path == module / "module.prop" and metadata is not None:
+                        output.writestr("module.prop", metadata)
+                    else:
+                        output.write(path, path.relative_to(module))
+        with zipfile.ZipFile(candidate) as output:
+            if output.testzip() is not None:
+                raise ValueError("Module archive CRC validation failed")
+        os.replace(candidate, archive)
+    finally:
+        candidate.unlink(missing_ok=True)
+
+
+def validate_dependency_licenses(manifest):
+    missing = manifest.get("unlicensed_dependencies")
+    if not isinstance(missing, list) or any(not isinstance(name, str) or not name for name in missing):
+        raise ValueError("Missing Device Faker dependency license metadata; rebuild the engine")
+    if missing:
+        warnings.warn("Device Faker dependencies have no declared license: " + ", ".join(missing),
+                      RuntimeWarning, stacklevel=2)
+
+
+def validate_component_notices(root=ROOT, module=MODULE):
+    """Copied notices must retain the exact source texts from the build checkout."""
+    pairs = [(root / "LICENSE", module / "LICENSE"),
+             (root / "THIRD_PARTY_NOTICES.md", module / "THIRD_PARTY_NOTICES.md")]
+    for name in ["LICENSE", "NOTICE", "README.md", "RULES.md", "UPSTREAM.json"]:
+        pairs.append((root / "components/play-integrity" / name,
+                      module / "licenses/play-integrity" / ("GPL-3.0.txt" if name == "LICENSE" else name)))
+    for name, source in [("GPL-3.0.txt", "engine/LICENSE"), ("NOTICE", "engine/NOTICES"),
+                         ("UPSTREAM_REVISION", "UPSTREAM_REVISION")]:
+        pairs.append((root / "components/device-faker" / source, module / "licenses/device-faker" / name))
+    for name in ["LICENSE", "NOTICE", "README.md"]:
+        pairs.append((root / "components/language-spoof" / name, module / "licenses/language-spoof" / name))
+    licenses = root / "components/play-integrity/licenses"
+    for source in licenses.rglob("*"):
+        if source.is_file():
+            pairs.append((source, module / "licenses/play-integrity" / source.relative_to(licenses)))
+    for source, delivered in pairs:
+        if not delivered.is_file() or delivered.read_bytes() != source.read_bytes():
+            raise ValueError("Missing or altered component notice: " + str(delivered))
+
+
+def validate_device_faker():
+    payload = MODULE / "device-faker"
+    require(payload / "build.json")
+    manifest = json.loads((payload / "build.json").read_text())
+    validate_dependency_licenses(manifest)
+    source = ROOT / "components/device-faker"
+    revision = (source / "UPSTREAM_REVISION").read_text().strip()
+    if manifest.get("upstream_revision") != revision:
+        raise ValueError("Device Faker source revision differs from recorded provenance")
+    check_source_checkout(manifest.get("source_commit"))
+    for name in ["device-faker/device-faker-engine"]:
+        if name not in manifest["files"]:
+            raise ValueError("Missing Device Faker artifact hash: " + name)
+        elf(MODULE / name, 2, 183)
+    for name, digest in manifest["files"].items():
+        path = MODULE / name
+        require(path)
+        if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            raise ValueError("Device Faker artifact hash mismatch: " + name)
+    for name in ["GPL-3.0.txt", "NOTICE", "UPSTREAM_REVISION", "SOURCE.txt"]:
+        require(MODULE / "licenses/device-faker" / name)
+    source_url = f"https://github.com/eltavine/Duck-ToolBox/tree/{manifest['source_commit']}/components/device-faker"
+    if source_url not in (MODULE / "licenses/device-faker/SOURCE.txt").read_text():
+        raise ValueError("Device Faker corresponding-source notice does not match its build commit")
+    if not any(source_url.encode() in path.read_bytes() for path in (MODULE / "webroot").rglob("*.js")):
+        raise ValueError("WebUI Device Faker corresponding-source commit is missing or mismatched")
+
+
+def validate_language_contract(manifest, module=MODULE):
+    if manifest.get("embedded", {}).get("language_contract") != 1:
+        raise ValueError("Root Zygisk payload has an incompatible language contract")
+    marker = module / "play-integrity/language-spoof.version"
+    if not marker.is_file() or marker.read_bytes() != b"1\n":
+        raise ValueError("Root Zygisk payload has an incompatible language contract")
 
 
 def validate():
     require(MODULE / "webroot/index.html")
     require(MODULE / "play-integrity/build.json")
+    validate_component_notices()
+    validate_device_faker()
     manifest = json.loads((MODULE / "play-integrity/build.json").read_text())
     upstream = json.loads((ROOT / "components/play-integrity/UPSTREAM.json").read_text())
     if manifest["upstream_revision"] != upstream["revision"]:
@@ -79,59 +196,111 @@ def validate():
         raise ValueError("Corresponding-source notice does not match the engine commit")
     # The WebUI must link to the same immutable commit embedded in build.json.
     if not any(
-        manifest["source_commit"].encode() in path.read_bytes()
+        source_url.encode() in path.read_bytes()
         for path in (MODULE / "webroot").rglob("*.js")
     ):
         raise ValueError("WebUI corresponding-source commit is missing or mismatched")
-    if any(MODULE.rglob("play-integrity-source.tar.gz")):
-        raise ValueError("Legacy corresponding-source archive must not be bundled")
+    embedded = manifest.get("embedded")
+    if not embedded or embedded.get("api") != 4 or embedded.get("language_contract") != 1 or embedded.get("device_faker_revision") != (ROOT / "components/device-faker/UPSTREAM_REVISION").read_text().strip():
+        raise ValueError("Root Zygisk payload does not contain the recorded embedded engine")
+    validate_language_contract(manifest)
+    if any(path != MODULE / "module.prop" for path in MODULE.rglob("module.prop")):
+        raise ValueError("The installable module must not contain a second root-manager module")
+
+
+def package_metadata(variant, channel):
+    lines = (MODULE / "module.prop").read_text().splitlines()
+    version = module_properties("\n".join(lines))["version"]
+    values = {}
+    module_id = LITE_ID if variant == "lite" else FULL_ID
+    name = f"{ARTIFACT_PREFIX[module_id]}-{version}"
+    if variant == "lite":
+        values.update(
+            id=LITE_ID,
+            name="Duck ToolBox Lite",
+            description="Tricky Store manager, RKP workbench and device RKP issuer in one WebUI.",
+        )
+        lines = [line for line in lines if not line.startswith("updateJson=")]
+    if channel == "nightly":
+        code = subprocess.check_output(["git", "rev-list", "--count", "HEAD"], cwd=ROOT, text=True).strip()
+        name += f"-{code}-canary"
+        values.update(version=f"{version} ({code}-canary)", versionCode=code)
+    metadata = "\n".join(
+        f"{key}={values[key]}" if (key := line.partition("=")[0]) in values else line
+        for line in lines
+    ) + "\n"
+    return name, metadata
+
+
+def package_lite(binary, webroot, archive, metadata, validate_only):
+    require(binary)
+    with tempfile.TemporaryDirectory(prefix="duck-lite-") as directory:
+        module = Path(directory)
+        for relative in LITE_SOURCES:
+            destination = module / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(MODULE / relative, destination)
+        shutil.copy2(binary, module / "bin/duckd")
+        (module / "bin/duckd").chmod(0o755)
+        shutil.copytree(webroot, module / "webroot", symlinks=True)
+        (module / "module.prop").write_text(metadata)
+        paths = list(module.rglob("*"))
+        if any(path.is_symlink() for path in paths):
+            raise ValueError("Lite payload cannot contain symbolic links")
+        names = {path.relative_to(module).as_posix() for path in paths if path.is_file()}
+        validate_lite_payload(
+            names, lambda name: (module / name).read_bytes(), module_properties(metadata)
+        )
+        if not validate_only:
+            write_module_archive(module, archive)
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--binary", default="target/aarch64-linux-android/release/duckd")
-    parser.add_argument("--output")
+    parser.add_argument("--variant", choices=["full", "lite"], default="full")
+    parser.add_argument("--binary")
+    parser.add_argument("--webroot", help="Lite WebUI build directory")
+    outputs = parser.add_mutually_exclusive_group()
+    outputs.add_argument("--output")
+    outputs.add_argument("--output-dir", default="dist")
     parser.add_argument("--channel", choices=["stable", "nightly"], help="Set archive metadata without modifying module/module.prop")
     parser.add_argument("--validate-only", action="store_true")
     args = parser.parse_args()
-    binary = ROOT / args.binary
+    name, metadata = package_metadata(args.variant, args.channel)
+    archive = ROOT / (args.output or Path(args.output_dir) / f"{name}.zip")
+    if archive.resolve().is_relative_to(MODULE.resolve()):
+        parser.error("Archive output must be outside the module source directory")
+    if args.variant == "lite":
+        package_lite(
+            ROOT / (args.binary or "target/lite/duckd"),
+            ROOT / (args.webroot or "target/lite/webroot"),
+            archive,
+            metadata,
+            args.validate_only,
+        )
+        if not args.validate_only:
+            print(archive)
+        return
+    if args.webroot:
+        parser.error("--webroot is only supported for Lite")
+    binary = ROOT / (args.binary or "target/aarch64-linux-android/release/duckd")
     require(binary)
     destination = MODULE / "bin/duckd"
     if binary.resolve() != destination.resolve():
         shutil.copy2(binary, destination)
     for name in ["README.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md"]:
         shutil.copy2(ROOT / name, MODULE / name)
-    for binary_path in [MODULE / "bin/duckd", MODULE / "play-integrity/pif-engine"]:
+    for binary_path in [MODULE / "bin/duckd", MODULE / "play-integrity/pif-engine", MODULE / "device-faker/device-faker-engine"]:
         if binary_path.exists():
             binary_path.chmod(0o755)
     require(MODULE / "play-integrity/build.json")
     if not args.validate_only:
         subprocess.run([sys.executable, str(ROOT / "scripts/prepare-linux-env.py")], check=True)
+    remove_source_archives(MODULE)
     validate()
     if args.validate_only:
         return
-    version = next(line.split("=", 1)[1] for line in (MODULE / "module.prop").read_text().splitlines() if line.startswith("version="))
-    metadata = (MODULE / "module.prop").read_text()
-    name = f"duck-toolbox-{version}"
-    if args.channel == "nightly":
-        code = subprocess.check_output(["git", "rev-list", "--count", "HEAD"], cwd=ROOT, text=True).strip()
-        name += f"-{code}-canary"
-        values = {"version": f"{version} ({code}-canary)", "versionCode": code}
-        metadata = "\n".join(f"{key}={values[key]}" if (key := line.partition("=")[0]) in values else line for line in metadata.splitlines()) + "\n"
-    if args.channel is None:
-        name += "-play-integrity"
-    archive = ROOT / (args.output or f"dist/{name}.zip")
-    archive.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as output:
-        for path in sorted(MODULE.rglob("*")):
-            if path.is_file():
-                if path == MODULE / "module.prop" and args.channel:
-                    output.writestr("module.prop", metadata)
-                else:
-                    output.write(path, path.relative_to(MODULE))
-    with zipfile.ZipFile(archive) as output:
-        if output.testzip() is not None:
-            raise ValueError("Module archive CRC validation failed")
+    write_module_archive(MODULE, archive, metadata if args.channel else None)
     print(archive)
 
 

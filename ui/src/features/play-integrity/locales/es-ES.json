@@ -9,7 +9,8 @@
     "generate": "Huellas",
     "compatibility": "Compatibilidad",
     "diagnostics": "Diagnóstico",
-    "license": "Licencias"
+    "license": "Licencias",
+    "archive": "Biblioteca de propiedades Pixel"
   },
   "enabled": "Activar motor",
   "preview": "Vista previa",
@@ -80,6 +81,7 @@
   "denylistHelp": "Gestión automática de Magisk DenyList: el modo completo elimina GMS y Play Store; solo scripts los añade. Se modifica la lista del gestor root.",
   "selinuxHelp": "En modo permisivo, el comportamiento original restringe la lectura de SELinux enforce/policy. No cambia el kernel a enforcing.",
   "flagHelp": {
+    "fullInjection": "Usa la inyección nativa de Build y propiedades privadas del proceso en ARM64. Desactívala para usar las rutas anteriores.",
     "spoofBuild": "Sobrescribe campos Build en el proceso de destino.",
     "spoofProps": "Sobrescribe la lectura de propiedades en el proceso de destino.",
     "spoofProvider": "Compatibilidad antigua: bloquea solicitudes de cadenas de certificados de DroidGuard. Puede interferir con la atestación por hardware.",
@@ -96,6 +98,7 @@
     "wildcard": "Patrón no compatible: solo se implementa * inicial para sufijos.",
     "canary": "Canary conserva heurísticas originales: Pixel 10a usa API 35 (nota: real 36), dispositivos desconocidos 37, board API 32. Las seis semanas y el parche alternativo son estimaciones, no aceptación de Google ni vigencia de certificados.",
     "vending_priority": "La compatibilidad SDK de Play Store tiene prioridad sobre la huella.",
+    "vending_build_priority": "La inyección Build de Play Store tiene prioridad sobre los modos SDK y huella.",
     "pixel_patch_unknown": "Los datos de Google no indican la fecha exacta del parche; el candidato la deja sin establecer."
   },
   "strongHelp": "Establece spoofProvider=0 para el candidato. Conserva valores de parche coherentes entre Build y propiedad; no garantiza resultados.",
@@ -122,6 +125,7 @@
     "SECURITY_PATCH": "Fecha del parche de seguridad",
     "DEVICE_INITIAL_SDK_INT": "API de lanzamiento del dispositivo",
     "advanced": "Opciones avanzadas",
+    "fullInjection": "Inyección completa",
     "spoofBuild": "Sustituir campos Build",
     "spoofProps": "Sustituir lecturas de propiedades",
     "spoofProvider": "Compatibilidad Provider heredada",
@@ -145,6 +149,7 @@
     "invalid": "No se pudo leer esta instantánea. Las demás siguen disponibles."
   },
   "inspection": {
+    "private": "Propiedades privadas coincidentes · {matched}/{total}",
     "title": "Comparación de información",
     "help": "Compara las propiedades actuales del sistema con los valores Build y propiedades guardados. Otros módulos pueden haber alterado las lecturas.",
     "refresh": "Actualizar lecturas",
@@ -199,9 +204,14 @@
     "fetch": "Obtener compilaciones Pixel",
     "loading": "Obteniendo…",
     "patchUnknown": "Se desconoce la fecha exacta del parche; no se deduce ni se sincroniza.",
-    "preview": "Revisar la huella seleccionada"
+    "preview": "Revisar la huella seleccionada",
+    "search": "Buscar modelo o nombre en clave",
+    "noDevices": "No hay dispositivos coincidentes. Borra la búsqueda para ver todos los modelos.",
+    "availability": "Las compilaciones disponibles dependen del servicio de metadatos de Google. Que un modelo aparezca no garantiza compilaciones disponibles ni superar la comprobación de integridad.",
+    "legacySource": "Este registro de origen antiguo solo identifica el dispositivo y la compilación. No vincula la huella completa, el modelo ni la API de lanzamiento."
   },
   "quick": {
+    "build": "Usar los campos Build configurados",
     "title": "Controles de huella",
     "vending": "Modo de sustitución de Play Store",
     "vendingHelp": "El modo de huella solo cambia FINGERPRINT. La compatibilidad SDK tiene prioridad.",
@@ -222,6 +232,26 @@
     "vendor": "Parche Vendor",
     "boot": "Parche Boot",
     "preview": "Actualizar vista previa de parches",
-    "draft": "Revisa los cambios de particiones antes de seleccionar la sincronización."
+    "draft": "Revisa los cambios de particiones antes de seleccionar la sincronización.",
+    "multipleTargets": "Solo se puede sincronizar un backend de keystore a la vez.",
+    "targetUnavailable": "El backend de keystore ya no está activo. Actualiza la vista previa."
+  },
+  "archive": {
+    "title": "Biblioteca de propiedades Pixel",
+    "help": "Selecciona un dispositivo y canal del archivo comunitario para previsualizar la configuración PI. Las fechas de parches corresponden a la compilación elegida. El hash de arranque es informativo; la aceptación requiere pruebas en el dispositivo.",
+    "source": "Fuente comunitaria",
+    "fetch": "Obtener biblioteca",
+    "channel": "Canal de publicación",
+    "release": "Estable",
+    "beta": "Beta",
+    "canary": "Canary",
+    "build": "Compilación",
+    "patch": "Parche de seguridad",
+    "digest": "Hash de arranque (referencia)",
+    "updated": "Archivo actualizado",
+    "preview": "Previsualizar configuración del archivo",
+    "details": "Detalles de la fuente",
+    "revision": "Commit de origen",
+    "preparing": "Preparando configuración…"
   }
 }

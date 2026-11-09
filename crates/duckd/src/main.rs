@@ -28,6 +28,8 @@ static FEATURES: &[&dyn Feature] = &[
     &duck_tricky_store::FEATURE,
     #[cfg(feature = "play-integrity")]
     &duck_play_integrity::FEATURE,
+    #[cfg(feature = "device-faker")]
+    &duck_device_faker::FEATURE,
     #[cfg(feature = "system")]
     &duck_system::FEATURE,
     #[cfg(feature = "kernel-modules")]
@@ -36,12 +38,19 @@ static FEATURES: &[&dyn Feature] = &[
     &duck_zram::FEATURE,
     #[cfg(feature = "linux-env")]
     &duck_linux_env::FEATURE,
+    #[cfg(feature = "misc")]
+    &duck_misc::FEATURE,
 ];
 
 fn cli() -> clap::Command {
+    let description = if cfg!(feature = "lite") && FEATURES.len() == 3 {
+        "Duck ToolBox Lite backend. API subcommands print one JSON envelope."
+    } else {
+        "Duck ToolBox backend. API subcommands print one JSON envelope; linux-env shell opens an interactive terminal."
+    };
     clap::Command::new("duckd")
         .version(env!("CARGO_PKG_VERSION"))
-        .about("Duck ToolBox backend. API subcommands print one JSON envelope; linux-env shell opens an interactive terminal.")
+        .about(description)
         .arg(
             Arg::new("json")
                 .long("json")

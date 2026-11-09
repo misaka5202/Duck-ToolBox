@@ -6,14 +6,50 @@ compiled into one JSON CLI (`duckd`); the WebUI is a set of feature folders that
 discovers at build time. Features only meet through versioned contracts, so each one can be
 changed, removed or added on its own.
 
+## Full and Lite
+
+**Full** is the default for Stable, Canary, and the KernelSU Modules listing.
+**Lite** keeps the Tricky Store manager, RKP workbench and device RKP issuer. It
+ships without Zygisk injection libraries and uses the root manager for WebUI and
+module operations. The Tricky Store manager configures a separately installed
+keystore module.
+
+Install or update Lite manually with the `duck-lite-*.zip` asset from
+[GitHub Releases](https://github.com/eltavine/Duck-ToolBox/releases). Lite has its own
+module ID and data directory at `/data/adb/duck-toolbox-lite`. Switching editions
+requires uninstalling the current edition and rebooting first. Uninstall removes
+that edition's local profiles and output files, including exported keyboxes.
+
 ## Tools
 
 - **Play Integrity**: an independently built GPLv3 engine derived from Play Integrity Fork,
   with configuration previews, migration, fingerprint generation, compatibility settings and
-  diagnostics in the WebUI. It is enabled by default; injection requires Zygisk and a saved
-  nonempty configuration. Full-mode global scripts also wait for configuration; explicitly
+  diagnostics in the WebUI. It is disabled by default and requires explicit enabling;
+  saved enable settings are retained. Injection requires Zygisk and a saved nonempty
+  configuration. Full-mode global scripts also wait for configuration; explicitly
   selected scripts-only mode can run without a fingerprint. A separate stop control works
   during tasks, invalid configuration and pending recovery; configuration is retained. The management code remains MIT; see [licensing boundaries](THIRD_PARTY_NOTICES.md).
+
+- **Device Faker**: per-app device profiles and reusable templates from
+  [Seyud/device_faker](https://github.com/Seyud/device_faker), embedded as a normal source component.
+  The WebUI edits TOML, builds template/app drafts, previews file or standalone-config
+  imports, reports conflicting assignments and restores the previous configuration.
+  An offline library includes 207 community device presets from [Issue #48](https://github.com/eltavine/Duck-ToolBox/issues/48),
+  with searchable identities, editable source fields and fingerprint mismatch notices.
+  Configuration and power controls are independent; empty defaults target no apps.
+  Its GPLv3 engine shares the toolbox’s single Zygisk library with PI,
+  with explicit callback ordering and parent disable/removal gates. Reboot after installation.
+  Requires Zygisk and ARM64 apps. Global property/DPI options require acknowledgement;
+  process-local changes require an app restart, and failed global cleanup needs reboot.
+  Online template downloads are not embedded. Actual injection needs device validation.
+  See [build, lifecycle and protocol](components/device-faker/README.md).
+
+- **Miscellaneous → Language spoofing**: per-app, per-Android-user language rules
+  for Java locale APIs, app/system resources and common native property reads.
+  Requires working Zygisk; configuration and activation are separate. It leaves the
+  device language unchanged. Restart target apps after changes. Native/custom language
+  logic may bypass it and advertisement removal is not guaranteed. See the
+  [component, build requirements and device validation procedure](components/language-spoof/README.md).
 
 - **Tricky Store manager**: a complete port of KOWX712's
   [Tricky Addon: Update Target List](https://github.com/KOWX712/Tricky-Addon-Update-Target-List),
@@ -236,21 +272,26 @@ What keeps it modular and resistant to breaking changes:
 | `action.sh` (Magisk) | Opens the WebUI in KSUWebUIStandalone or WebUI X, installing KSUWebUIStandalone if neither is present. |
 | `uninstall.sh` | Removes entry links, flags, the boot hash and `/data/adb/duck-toolbox`. |
 
-Saved data lives in `/data/adb/duck-toolbox/var`, outside the module directory, so updates
-keep it.
+Full stores saved data in `/data/adb/duck-toolbox/var`. Lite uses
+`/data/adb/duck-toolbox-lite/var`. Both paths sit outside the module directory so updates
+keep them.
 
 **Updates.** The stable channel follows `updateJson` in `module.prop`. The canary channel
 reads the newest CI artifact through nightly.link: CI uploads the module directory as
 `duck-toolbox-<version>-<commit count>-canary`, and the commit count is its `versionCode`.
-Each successful package on a `main` push or manual CI run also publishes the module ZIP
-as a GitHub prerelease. Tags use `nightly-<8-character commit hash>-<UTC timestamp>`
+Each successful package on a `main` push or manual CI run publishes Full and Lite
+together as a GitHub prerelease. Tags use `nightly-<8-character commit hash>-<UTC timestamp>`
 (for example, `nightly-1234abcd-20261011T120000123456Z`). These releases do not replace
 the latest stable release; Telegram uploads continue on push builds.
+Published module ZIPs include GitHub build-provenance and SBOM attestations, an SPDX
+inventory and checksums. See [release verification and inventory coverage](docs/supply-chain.md).
+The `*-verified` Actions artifact contains the exact ZIP for each edition. The legacy
+nightly.link directory archive is packaged separately and has a different digest.
 The **Stable** workflow runs when the `version` field changes in
 `module/module.prop` or through a manual request. Metadata-only edits skip publication.
 It reuses the CI checks and builds, preserves `version`
-and `versionCode` from `module/module.prop`, publishes `v<version>` as the latest
-non-prerelease release, and sends the same ZIP to Telegram with a `stable` label.
+and `versionCode` from `module/module.prop`, publishes both ZIPs under `v<version>`
+as the latest stable release, and sends the Full ZIP to Telegram with a `stable` label.
 Before running it on `main`, increase `versionCode` beyond all accepted releases and
 update `update.json` to match the version and `duck-toolbox-<version>.zip` asset.
 
@@ -363,7 +404,8 @@ pnpm locales:import <Tricky-Addon>/webui/public/locales/strings   # refresh tran
 On Windows, `pwsh ./scripts/build.ps1 -PackageModule` builds everything with `cargo-ndk`
 and writes the module zip to `dist/`.
 The Windows helper pins the WebUI to the current Git commit automatically. For
-manual WebUI builds set `VITE_PIF_SOURCE_COMMIT` to `git rev-parse HEAD` before
+manual WebUI builds set both `VITE_PIF_SOURCE_COMMIT` and
+`VITE_DEVICE_FAKER_SOURCE_COMMIT` to `git rev-parse HEAD` before
 running `pnpm build`; the module packager refuses moving-branch source links.
 
 The bundled Play Integrity engine additionally requires JDK 21, Android SDK / Build
@@ -381,14 +423,23 @@ python3 scripts/package-module.py --channel nightly
 
 Channel metadata is written into each ZIP without changing `module/module.prop`.
 Nightly packages use the repository's commit-count version code and `canary` suffix.
-Both release channels retain the GPLv3 license and dependency notices. The engine
+Full retains the GPLv3 license and dependency notices in both channels. The engine
 build records its exact Git commit, and packaging rejects a dirty or mismatched
-source checkout or WebUI source link. The installable ZIP does not include a
-second copy of the source. The WebUI, module license notice, Telegram notification
-and Release notes link to the matching commit under `components/play-integrity`.
+source checkout or WebUI source link. Both feature footers link to the source at
+the exact build commit, including the build scripts and dependency lockfiles.
 The pinned build/dependency script is `scripts/build-play-integrity.py`.
 See [the rule review](components/play-integrity/RULES.md) for original sources
 and required device validation.
+
+To build Lite using the Android backend prerequisites above:
+
+```sh
+cargo build --locked --release --package duckd --target aarch64-linux-android \
+  --target-dir target/lite --no-default-features --features lite
+(cd ui && pnpm build --mode lite)
+python3 scripts/package-module.py --variant lite \
+  --binary target/lite/aarch64-linux-android/release/duckd --channel nightly
+```
 
 The power control uses `duckd play-integrity disable` (standalone:
 `pif-engine request disable`) and `play-integrity power` for status. Disable

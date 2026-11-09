@@ -35,7 +35,7 @@ include_directories(
     ${shadowhook_SOURCE_DIR}/shadowhook/src/main/cpp/third_party/xdl
 )
 
-add_library(${CMAKE_PROJECT_NAME} SHARED main.cpp companion.cpp config.cpp property_hook.cpp java_injection.cpp observation.cpp ${PIF_VENDOR_DIR}/local_cxa_atexit_finalize_impl/atexit.cpp ${SHADOWHOOK_SRC} ${SHADOWHOOK_ARCH_SRC})
+add_library(${CMAKE_PROJECT_NAME} SHARED main.cpp companion.cpp config.cpp property_hook.cpp private_properties.cpp java_injection.cpp observation.cpp ${PIF_VENDOR_DIR}/local_cxa_atexit_finalize_impl/atexit.cpp ${SHADOWHOOK_SRC} ${SHADOWHOOK_ARCH_SRC})
 
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE log)
 
@@ -45,3 +45,38 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     PIF_MODULE_DIR="${PIF_MODULE_DIR}"
     PIF_DATA_DIR="${PIF_DATA_DIR}"
 )
+
+set(DUCK_RUNTIME_DIR "" CACHE PATH "Embedded Zygisk composition source")
+set(DUCK_FAKER_LIBRARY "" CACHE FILEPATH "ARM64 Device Faker static library")
+if(NOT EXISTS "${DUCK_RUNTIME_DIR}/entry.cpp")
+    message(FATAL_ERROR "Build through scripts/build-play-integrity.py with the composite runtime")
+endif()
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    ${DUCK_RUNTIME_DIR}/entry.cpp ${DUCK_RUNTIME_DIR}/engine.cpp ${DUCK_RUNTIME_DIR}/channel.cpp
+    ${DUCK_RUNTIME_DIR}/pthread_keys.cpp)
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE "${DUCK_RUNTIME_DIR}")
+# Keep static runtime helpers (including compiler-rt emutls) local to this DSO.
+target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
+    -Wl,--wrap=pthread_key_create -Wl,--wrap=pthread_key_delete -Wl,--exclude-libs,ALL)
+set(DUCK_LANGUAGE_DIR "" CACHE PATH "Process-local language spoofing source")
+if(NOT EXISTS "${DUCK_LANGUAGE_DIR}/native/entry.cpp")
+    message(FATAL_ERROR "Build with the independent language spoofing component")
+endif()
+set(LSPLANT_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(LSPLANT_STANDALONE ON CACHE BOOL "" FORCE)
+add_subdirectory(${PIF_VENDOR_DIR}/lsplant/lsplant/src/main/jni ${CMAKE_CURRENT_BINARY_DIR}/lsplant)
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE lsplant_static)
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    ${DUCK_LANGUAGE_DIR}/native/entry.cpp ${DUCK_LANGUAGE_DIR}/native/config.cpp
+    ${DUCK_LANGUAGE_DIR}/native/companion.cpp ${DUCK_LANGUAGE_DIR}/native/hooks.cpp
+    ${DUCK_LANGUAGE_DIR}/native/properties.cpp)
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${DUCK_LANGUAGE_DIR}/native)
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DUCK_HAS_LANGUAGE_SPOOF=1)
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
+    if(NOT EXISTS "${DUCK_FAKER_LIBRARY}")
+        message(FATAL_ERROR "Build the embedded Device Faker static library first")
+    endif()
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE DUCK_HAS_DEVICE_FAKER=1)
+    target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE "${DUCK_FAKER_LIBRARY}" dl m)
+endif()

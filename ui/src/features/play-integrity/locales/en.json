@@ -9,7 +9,8 @@
     "generate": "Fingerprints",
     "compatibility": "Compatibility",
     "diagnostics": "Diagnostics",
-    "license": "Licenses"
+    "license": "Licenses",
+    "archive": "Pixel property library"
   },
   "enabled": "Enable the engine",
   "preview": "Preview changes",
@@ -80,6 +81,7 @@
   "denylistHelp": "Magisk DenyList is managed automatically: full mode removes GMS and Play Store; scripts-only mode adds them. This changes your root manager’s list.",
   "selinuxHelp": "In permissive mode, upstream compatibility behavior restricts reads of SELinux enforce/policy files. It does not change the kernel to enforcing.",
   "flagHelp": {
+    "fullInjection": "Use native Build injection and process-private properties on ARM64. Turn off to use the legacy injection paths.",
     "spoofBuild": "Override Build fields in the target process.",
     "spoofProps": "Override system property reads in the target process.",
     "spoofProvider": "Legacy compatibility: block DroidGuard certificate-chain requests. This can conflict with hardware attestation.",
@@ -96,6 +98,7 @@
     "wildcard": "Unsupported wildcard: only a leading * suffix match is implemented.",
     "canary": "Canary retains upstream heuristics: Pixel 10a uses API 35 despite the noted actual 36; unknown devices use 37; board API uses 32. Six-week expiry and patch fallback are estimates, not Google acceptance or certificate validity.",
     "vending_priority": "Play Store SDK compatibility is enabled and overrides its fingerprint replacement.",
+    "vending_build_priority": "Play Store Build injection takes precedence over its SDK and fingerprint modes.",
     "pixel_patch_unknown": "Google build metadata does not provide an exact security patch date. The candidate leaves it unset."
   },
   "strongHelp": "Sets spoofProvider=0 for this candidate. Build and property patch values stay paired; no verdict is guaranteed.",
@@ -122,6 +125,7 @@
     "SECURITY_PATCH": "Security patch date",
     "DEVICE_INITIAL_SDK_INT": "First shipped API level",
     "advanced": "Advanced options",
+    "fullInjection": "Full injection",
     "spoofBuild": "Override Build fields",
     "spoofProps": "Override property reads",
     "spoofProvider": "Legacy Provider compatibility",
@@ -145,6 +149,7 @@
     "invalid": "This snapshot could not be read. Other snapshots are available."
   },
   "inspection": {
+    "private": "Private properties matched · {matched}/{total}",
     "title": "Information comparison",
     "help": "Compare current system property readings with the saved Build and property overrides. Other modules may already affect system readings.",
     "refresh": "Refresh readings",
@@ -199,9 +204,14 @@
     "fetch": "Fetch Pixel builds",
     "loading": "Fetching…",
     "patchUnknown": "Exact security patch date is unavailable. No patch date is inferred or synchronized.",
-    "preview": "Preview selected fingerprint"
+    "preview": "Preview selected fingerprint",
+    "search": "Search model or codename",
+    "noDevices": "No matching devices. Clear the search to see all models.",
+    "availability": "Available release builds depend on Google’s metadata service. A listed model does not guarantee build availability or integrity acceptance.",
+    "legacySource": "This older source record identifies only the device and build. It does not bind the complete fingerprint, model or launch API."
   },
   "quick": {
+    "build": "Use configured Build fields",
     "title": "Fingerprint controls",
     "vending": "Play Store override mode",
     "vendingHelp": "Play Store fingerprint mode changes FINGERPRINT only. SDK compatibility takes precedence over fingerprint replacement.",
@@ -222,6 +232,26 @@
     "vendor": "Vendor patch",
     "boot": "Boot patch",
     "preview": "Update patch preview",
-    "draft": "Partition edits are not previewed. Update the preview before selecting synchronization."
+    "draft": "Partition edits are not previewed. Update the preview before selecting synchronization.",
+    "multipleTargets": "Only one keystore backend can be synchronized at a time.",
+    "targetUnavailable": "The keystore backend is no longer active. Refresh the configuration preview."
+  },
+  "archive": {
+    "title": "Pixel property library",
+    "help": "Select a device and channel from the community archive to preview a PI configuration. Patch dates come from the selected build. Boot hash is shown for reference only; acceptance requires device testing.",
+    "source": "Community source",
+    "fetch": "Fetch property library",
+    "channel": "Release channel",
+    "release": "Stable",
+    "beta": "Beta",
+    "canary": "Canary",
+    "build": "Build",
+    "patch": "Security patch",
+    "digest": "Boot hash (reference)",
+    "updated": "Archive updated",
+    "preview": "Preview archive configuration",
+    "details": "Source details",
+    "revision": "Source commit",
+    "preparing": "Preparing configuration…"
   }
 }

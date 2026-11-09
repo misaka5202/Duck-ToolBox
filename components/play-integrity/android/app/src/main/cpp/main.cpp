@@ -9,6 +9,8 @@
 #include "transport.hpp"
 #include "settings.hpp"
 #include "property_hook.hpp"
+#include "private_properties.hpp"
+#include "pthread_keys.hpp"
 #include "java_injection.hpp"
 #include "observation.hpp"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, "PIF/Native", __VA_ARGS__)
@@ -38,13 +40,21 @@ public:
         if(process=="com.google.android.gms.unstable") api->setOption(zygisk::FORCE_DENYLIST_UNMOUNT);
         if(process!="com.google.android.gms.unstable" && process!="com.android.vending") {unload();return;}
         raw=std::move(content);boot=pif::bootIdentity();start=pif::processStart();
-        settings=pif::settings(std::move(config),process=="com.android.vending");ready=true;
+        settings=pif::settings(std::move(config),process=="com.android.vending");
+        if (settings.injectDex() && dex.empty()) { LOGD("Configured DEX payload unavailable"); unload(); return; }
+        if (!settings.injectDex()) std::vector<char>().swap(dex);
+        if (settings.fullInjection && settings.spoofProps) privateProperties.prepare(settings);
+        ready=true;
     }
     void postAppSpecialize(const zygisk::AppSpecializeArgs *) override {
         if(!ready) return;
-        const bool propertyHook=settings.spoofProps && hooks.install(settings);
-        if(settings.injectJava()) java.initialize(env,std::move(dex),settings);
-        pif::observe(env,raw,process,boot,start,propertyHook);
+        const bool injectJava=settings.injectJava();
+        if(settings.spoofProps || injectJava) duck::keep_pthread_keys();
+        const auto requested=privateProperties.size();
+        const bool propertyHook=settings.spoofProps && !requested && !settings.properties.empty() && hooks.install(settings);
+        if(injectJava) java.initialize(env,std::move(dex),settings);
+        pif::observe(env,raw,process,boot,start,propertyHook,requested,privateProperties.matching());
+        privateProperties={};
         std::string().swap(raw);
         LOGD("Specialization initialized for %s",process.c_str());
     }
@@ -59,7 +69,10 @@ private:
     std::vector<char> dex;
     pif::Settings settings;
     pif::PropertyHook hooks;
+    pif::PrivateProperties privateProperties;
     pif::JavaInjection java;
 };
-REGISTER_ZYGISK_MODULE(PlayIntegrityFix)
-REGISTER_ZYGISK_COMPANION(pif::companion)
+extern "C" void duck_pif_module_entry(zygisk::internal::api_table *table, JNIEnv *env) {
+    zygisk::internal::entry_impl<PlayIntegrityFix>(table, env);
+}
+extern "C" void duck_pif_companion(int fd) { pif::companion(fd); }
